@@ -3,29 +3,43 @@ import sys
 import pyexiv2
 import Image
 
+use_new_api = ( pyexiv2.__version__[2] == '3' )
+
 class Photo:
     def __init__(self, photo_path):
+        self.allowed_extensions = ['.jpg', '.jpeg']
+    
         self.filename = os.path.abspath( photo_path )
-        self.exif = pyexiv2.Image( self.filename )
-        self.exif.readMetadata()
-        self.image = Image.open( self.filename )
 
+        if use_new_api:
+            self.exif = pyexiv2.ImageMetadata( self.filename )
+            self.exif.read()
+        else:
+            self.exif = pyexiv2.Image( self.filename )
+            self.exif.readMetadata()
+
+        self.image = Image.open( self.filename )
+        
     def has_orientation_data(self):
-        return ( 'Exif.Image.Orientation' in self.exif.exifKeys() )
+        if use_new_api:
+            return ( 'Exif.Image.Orientation' in self.exif.exif_keys )
+        else:
+            return ( 'Exif.Image.Orientation' in self.exif.exifKeys() )
 
     def get_orientation(self):
         if not self.has_orientation_data():
             raise Exception("Photo does not contain orientation data.")
 
-        return self.exif['Exif.Image.Orientation']
+        if use_new_api:
+            return self.exif['Exif.Image.Orientation'].value
+        else:
+            return self.exif['Exif.Image.Orientation']
 
     def is_upright(self):
-        self.exif.exifKeys()
+        self.exif.exif_keys
 
     def reorient(self, desired_orientation):
-        if desired_orientation == 1:
-            return self.image.copy()
-        elif desired_orientation == 2:
+        if desired_orientation == 2:
             return self.image.transpose( Image.FLIP_LEFT_RIGHT )
         elif desired_orientation == 3:
             return self.image.transpose( Image.ROTATE_180 )
@@ -39,9 +53,19 @@ class Photo:
             return self.image.transpose( Image.FLIP_LEFT_RIGHT ).transpose( Image.ROTATE_270 )
         elif desired_orientation == 8:
             return self.image.transpose( Image.ROTATE_90 )
+        else:
+            return self.image.copy()
+			
+    def has_allowed_file_extension(self):
+        filname, extension = os.path.splitext( self.filename )
+        if extension.lower() in self.allowed_extensions:
+            return True
+        return False
 
     def rotate_to_upright(self):
         if( not self.has_orientation_data() or self.is_upright() ):
+            return False
+        if not self.has_allowed_file_extension():
             return False
 
         orientation = self.get_orientation()
@@ -72,8 +96,11 @@ def main():
 
     photo_paths = list_directory( directory_path )
     for photo_path in photo_paths:
-        photo = Photo( photo_path )
-        photo.rotate_to_upright()
+        try:
+            photo = Photo( photo_path )
+            photo.rotate_to_upright()
+        except IOError, e:
+            continue
 
 if __name__ == '__main__':
     main()
